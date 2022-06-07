@@ -29,6 +29,8 @@ struct bcc_symbol {
   const char *demangle_name;
   const char *module;
   uint64_t offset;
+  const char *path;
+  uint64_t line_no;
 };
 
 typedef int (*SYM_CB)(const char *symname, uint64_t addr);

@@ -405,6 +405,68 @@ bool ProcSyms::Module::find_addr(uint64_t offset, struct bcc_symbol *sym) {
   return false;
 }
 
+BlazeSyms::BlazeSyms(int pid, struct bcc_symbol_option *option)
+    : pid(pid)
+{
+    symbolizer = blazesym_new();
+}
+
+BlazeSyms::~BlazeSyms()
+{
+    blazesym_free(symbolizer);
+}
+
+BlazeSyms::refresh()
+{
+    blazesym_free(symbolizer);
+    symbolizer = nullptr;
+}
+
+bool
+BlazeSyms::resolve_addr(uint64_t addr, struct bcc_symbol *sym, bool demangle)
+{
+  if (!symbolizer)
+    symbolizer = blazesym_new();
+
+  blazesym_file_cfg cfg = { CFG_T_PROCESS, { .process = { pid }}};
+  blazesym_result *result = blazesym_symbolize(symbolizer, &cfg, 1, &addr, 1);
+  if (!result)
+    return false;
+
+  if (result->size < 1 || result->entires[0].size < 1)
+    return false;
+  memset(sym, 0, sizeof(struct bcc_symbol));
+  blazesym_csym *csym = &result->entries[0].syms[0];
+  sym->name = strdup(csym->symbol); // XXX: need to find a way to free it!
+  if (demangle) {
+    if (sym->name && (!strncmp(sym->name, "_Z", 2) || !strncmp(sym->name, "___Z", 4)))
+      sym->demangle_name = abi::__cxa_demangle(sym->name, nullptr, nullptr, nullptr);
+    if (!sym->demangle_name)
+      sym->demangle_name = sym->name;
+  }
+  sym->module = nullptr;	// XXX: should be supported by blazesym.
+  sym->offset = addr - csym->start_address;
+  sym->path = csym->path;
+  sym->line_no = csym->line_no;
+
+  return true;
+}
+
+bool
+BlazeSyms::resolve_name(const char *module, const char *name, uint64_t *addr)
+{
+  if (!symbolizer)
+    symbolizer = blazesym_new();
+
+  blazesym_file_cfg cfg = { CFG_T_PROCESS, { .process = { pid }}};
+  uint64_t addr_ = blazesym_find_address(symbolizer, &cfg, 1, name);
+  if (addr_ == 0)
+    return false;
+  *addr = addr_;
+
+  return true;
+}
+
 bool BuildSyms::Module::load_sym_table()
 {
   if (loaded_)
@@ -498,14 +560,22 @@ extern "C" {
 void *bcc_symcache_new(int pid, struct bcc_symbol_option *option) {
   if (pid < 0)
     return static_cast<void *>(new KSyms());
+#ifdef WITH_BLAZESYM
+  return static_cast<void *>(new BlazeSyms(pid, option));
+#else
   return static_cast<void *>(new ProcSyms(pid, option));
+#endif
 }
 
 void bcc_free_symcache(void *symcache, int pid) {
   if (pid < 0)
     delete static_cast<KSyms*>(symcache);
   else
+#ifdef WITH_BLAZESYM
+    delete static_cast<BlazeSyms*>(symcache);
+#else
     delete static_cast<ProcSyms*>(symcache);
+#endif
 }
 
 void bcc_symbol_free_demangle_name(struct bcc_symbol *sym) {

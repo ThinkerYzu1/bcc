@@ -161,10 +161,22 @@ class ProcSyms : SymbolCache {
 
 public:
   ProcSyms(int pid, struct bcc_symbol_option *option = nullptr);
+  virtual ~ProcSyms();
   virtual void refresh() override;
   virtual bool resolve_addr(uint64_t addr, struct bcc_symbol *sym, bool demangle = true) override;
   virtual bool resolve_name(const char *module, const char *name,
                             uint64_t *addr) override;
+};
+
+class BlazeSyms : SymbolCache {
+  int pid;
+  blazesym *symbolizer;
+
+public:
+  BlazeSyms(int pid, struct bcc_symbol_option *option = nullptr);
+  virtual void refresh() override;
+  virtual bool resolve_addr(uint64_t addr, struct bcc_symbol *sym, bool demangle = true) override;
+  virtual bool resolve_name(const char *module, const char *name,
 };
 
 class BuildSyms {
